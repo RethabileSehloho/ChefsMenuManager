@@ -46,3 +46,15 @@ Retheba Sehloho
 ## Assignment
 
 MAST5112 - Part 2: Building the Mobile Application
+## Change Log: Part 3 (Final PoE)
+
+### New Features Added:
+- **Manage Items:** Added Edit and Delete functionality to existing menu items.
+- **Search & Filter:** Added a search bar to find items by name, and filter buttons to sort by Course (Starter, Main Course, Dessert).
+- **Menu Statistics:** Added a dashboard displaying Total Items, Average Price, and Dessert count.
+- **UX Improvements:** Added confirmation alerts before deleting an item.
+
+### Refactoring Changes:
+- **Reusable Components:** Extracted the form into `MenuForm.tsx` and the menu cards into `MenuItemCard.tsx` to keep the code clean.
+- **Utility Functions:** Created `statistics.ts` to calculate dashboard numbers outside the main screen component.
+- **Database:** Updated `storage.ts` with `updateMenuItem` and `deleteMenuItem` functions.
