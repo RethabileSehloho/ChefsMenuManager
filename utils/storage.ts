@@ -24,10 +24,30 @@ export const loadMenuItems = async () => {
   }
 };
 
-export const clearAllItems = async () => {
+// NEW: Update an existing item
+export const updateMenuItem = async (updatedItem: any) => {
   try {
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    const existingItems = await loadMenuItems();
+    const updatedItems = existingItems.map((item: any) => 
+      item.id === updatedItem.id ? updatedItem : item
+    );
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedItems));
+    return true;
   } catch (error) {
-    console.error('Error clearing items:', error);
+    console.error('Error updating menu item:', error);
+    throw error;
+  }
+};
+
+// NEW: Delete an item
+export const deleteMenuItem = async (id: number) => {
+  try {
+    const existingItems = await loadMenuItems();
+    const updatedItems = existingItems.filter((item: any) => item.id !== id);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedItems));
+    return true;
+  } catch (error) {
+    console.error('Error deleting menu item:', error);
+    throw error;
   }
 };

@@ -2,39 +2,36 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   FlatList,
   ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
 } from 'react-native';
 import { globalStyles, colors } from '../styles/globalStyles';
-import { loadMenuItems, saveMenuItem } from '../utils/storage';
+import { loadMenuItems, saveMenuItem, updateMenuItem, deleteMenuItem } from '../utils/storage';
+import { calculateStatistics } from '../utils/statistics';
+import MenuItemCard from '../components/MenuItemCard';
+import MenuForm from '../components/MenuForm';
 import Icon from 'react-native-vector-icons/Ionicons';
-
-interface MenuItem {
-  id: number;
-  dishName: string;
-  description: string;
-  course: string;
-  price: number;
-  createdAt: string;
-}
 
 const COURSE_OPTIONS = ['Starter', 'Main Course', 'Dessert'];
 
 export default function MenuScreen() {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [menuItems, setMenuItems] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [dishName, setDishName] = useState('');
-  const [description, setDescription] = useState('');
-  const [course, setCourse] = useState('');
-  const [price, setPrice] = useState('');
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit State
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState('');
 
   const loadItems = useCallback(async () => {
     const items = await loadMenuItems();
@@ -51,97 +48,67 @@ export default function MenuScreen() {
     setRefreshing(false);
   };
 
-  const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
-    if (!dishName.trim()) newErrors.dishName = 'Dish name is required';
-    if (!description.trim()) newErrors.description = 'Description is required';
-    if (!course) newErrors.course = 'Please select a course';
-    if (!price.trim()) {
-      newErrors.price = 'Price is required';
-    } else if (isNaN(parseFloat(price)) || parseFloat(price) <= 0) {
-      newErrors.price = 'Please enter a valid price';
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleAddItem = async () => {
-    if (!validateForm()) {
-      Alert.alert('Please fix errors', Object.values(errors).join('\n'));
-      return;
-    }
-
+  // --- CRUD Functions ---
+  const handleSaveItem = async (itemData: any) => {
     setIsSubmitting(true);
     try {
-      const newItem: MenuItem = {
-        id: Date.now(),
-        dishName: dishName.trim(),
-        description: description.trim(),
-        course: course,
-        price: parseFloat(price),
-        createdAt: new Date().toISOString(),
-      };
-
-      await saveMenuItem(newItem);
-      
-      setDishName('');
-      setDescription('');
-      setCourse('');
-      setPrice('');
-      setErrors({});
+      if (editingItem) {
+        // Update existing
+        await updateMenuItem({ ...itemData, id: editingItem.id });
+        Alert.alert('Success', 'Menu item updated successfully!');
+        setEditingItem(null);
+      } else {
+        // Add new
+        await saveMenuItem({ ...itemData, id: Date.now() });
+        Alert.alert('Success', 'Menu item added successfully!');
+      }
       await loadItems();
-      
-      Alert.alert(
-        '✅ Success!',
-        'Menu item added successfully!',
-        [{ text: 'Great!' }]
-      );
     } catch (error) {
-      Alert.alert('Error', 'Failed to add menu item. Please try again.');
+      Alert.alert('Error', 'Failed to save menu item.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const renderMenuItem = ({ item }: { item: MenuItem }) => (
-    <View style={globalStyles.itemCard}>
-      <View style={globalStyles.itemHeader}>
-        <Text style={globalStyles.itemName}>{item.dishName}</Text>
-        <Text style={globalStyles.itemPrice}>R{item.price}</Text>
-      </View>
-      <Text style={globalStyles.itemDescription} numberOfLines={2}>
-        {item.description}
-      </Text>
-      <View style={globalStyles.itemFooter}>
-        <View style={globalStyles.itemCourse}>
-          <Text style={globalStyles.itemCourseText}>{item.course}</Text>
-        </View>
-      </View>
-    </View>
-  );
+  const handleDelete = (id: number) => {
+    Alert.alert(
+      'Confirm Delete',
+      'Are you sure you want to delete this menu item?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteMenuItem(id);
+            await loadItems();
+            // If we deleted the item currently being edited, cancel edit mode
+            if (editingItem && editingItem.id === id) {
+              setEditingItem(null);
+            }
+          },
+        },
+      ]
+    );
+  };
 
-  const renderEmptyState = () => (
-    <View style={globalStyles.emptyState}>
-      <Icon 
-        name="restaurant-outline" 
-        size={80} 
-        color={colors.gold} 
-        style={globalStyles.emptyStateIcon} 
-      />
-      <Text style={globalStyles.emptyStateTitle}>No Menu Items Yet</Text>
-      <Text style={globalStyles.emptyStateText}>
-        Start adding your delicious dishes below
-      </Text>
-    </View>
-  );
+  // --- Filtering Logic ---
+  const filteredItems = menuItems.filter((item) => {
+    const matchesSearch = item.dishName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCourse = selectedFilter ? item.course === selectedFilter : true;
+    return matchesSearch && matchesCourse;
+  });
+
+  const stats = calculateStatistics(menuItems);
 
   return (
     <View style={globalStyles.menuContainer}>
+      {/* Header */}
       <View style={globalStyles.menuHeader}>
-        <Text style={globalStyles.menuHeaderTitle}>🍽️ Menu Items</Text>
+        <Text style={globalStyles.menuHeaderTitle}>🍽️ Menu</Text>
         <View style={globalStyles.menuHeaderCount}>
           <Text style={{ color: colors.cream, fontWeight: 'bold' }}>
-            {menuItems.length} items
+            {menuItems.length} Total
           </Text>
         </View>
       </View>
@@ -149,148 +116,99 @@ export default function MenuScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.gold}
-              colors={[colors.gold]}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />
           }
         >
-          <View style={globalStyles.formContainer}>
-            <View style={globalStyles.formCard}>
-              <Text style={globalStyles.formTitle}>Add New Menu Item</Text>
-
-              <View style={globalStyles.inputContainer}>
-                <Text style={globalStyles.inputLabel}>
-                  Dish Name <Text style={globalStyles.inputLabelRequired}>*</Text>
-                </Text>
-                <TextInput
-                  style={[
-                    globalStyles.input,
-                    errors.dishName && globalStyles.inputError,
-                  ]}
-                  placeholder="e.g., Grilled Salmon"
-                  placeholderTextColor={colors.gray}
-                  value={dishName}
-                  onChangeText={setDishName}
-                  editable={!isSubmitting}
-                />
-                {errors.dishName && (
-                  <Text style={globalStyles.errorText}>{errors.dishName}</Text>
-                )}
-              </View>
-
-              <View style={globalStyles.inputContainer}>
-                <Text style={globalStyles.inputLabel}>
-                  Description <Text style={globalStyles.inputLabelRequired}>*</Text>
-                </Text>
-                <TextInput
-                  style={[
-                    globalStyles.input,
-                    globalStyles.inputMultiline,
-                    errors.description && globalStyles.inputError,
-                  ]}
-                  placeholder="Describe the dish..."
-                  placeholderTextColor={colors.gray}
-                  value={description}
-                  onChangeText={setDescription}
-                  multiline
-                  numberOfLines={3}
-                  editable={!isSubmitting}
-                />
-                {errors.description && (
-                  <Text style={globalStyles.errorText}>{errors.description}</Text>
-                )}
-              </View>
-
-              <View style={globalStyles.inputContainer}>
-                <Text style={globalStyles.inputLabel}>
-                  Course <Text style={globalStyles.inputLabelRequired}>*</Text>
-                </Text>
-                <View style={globalStyles.courseContainer}>
-                  {COURSE_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[
-                        globalStyles.courseOption,
-                        course === option && globalStyles.courseOptionSelected,
-                      ]}
-                      onPress={() => setCourse(option)}
-                      disabled={isSubmitting}
-                    >
-                      <Text
-                        style={[
-                          globalStyles.courseOptionText,
-                          course === option && globalStyles.courseOptionTextSelected,
-                        ]}
-                      >
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                {errors.course && (
-                  <Text style={globalStyles.errorText}>{errors.course}</Text>
-                )}
-              </View>
-
-              <View style={globalStyles.inputContainer}>
-                <Text style={globalStyles.inputLabel}>
-                  Price (R) <Text style={globalStyles.inputLabelRequired}>*</Text>
-                </Text>
-                <TextInput
-                  style={[
-                    globalStyles.input,
-                    errors.price && globalStyles.inputError,
-                  ]}
-                  placeholder="e.g., 149.99"
-                  placeholderTextColor={colors.gray}
-                  value={price}
-                  onChangeText={setPrice}
-                  keyboardType="decimal-pad"
-                  editable={!isSubmitting}
-                />
-                {errors.price && (
-                  <Text style={globalStyles.errorText}>{errors.price}</Text>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  globalStyles.button,
-                  isSubmitting && globalStyles.buttonDisabled,
-                ]}
-                onPress={handleAddItem}
-                disabled={isSubmitting}
-              >
-                <Text style={globalStyles.buttonText}>
-                  {isSubmitting ? 'Adding...' : 'Add Menu Item'}
-                </Text>
-              </TouchableOpacity>
+          {/* Statistics Dashboard */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.totalItems}</Text>
+              <Text style={styles.statLabel}>Total Items</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>R{stats.averagePrice}</Text>
+              <Text style={styles.statLabel}>Avg Price</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.courseCounts['Dessert'] || 0}</Text>
+              <Text style={styles.statLabel}>Desserts</Text>
             </View>
           </View>
 
-          <View style={{ paddingBottom: 20 }}>
-            <Text style={[globalStyles.formTitle, { fontSize: 18, color: colors.primary }]}>
-              Current Menu
+          {/* Search & Filter Section */}
+          <View style={styles.searchSection}>
+            <View style={styles.searchBar}>
+              <Icon name="search" size={20} color={colors.gray} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by dish name..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery !== '' && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Icon name="close-circle" size={20} color={colors.gray} />
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            <View style={styles.filterRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <TouchableOpacity
+                  style={[styles.filterBtn, selectedFilter === '' && styles.filterBtnActive]}
+                  onPress={() => setSelectedFilter('')}
+                >
+                  <Text style={[styles.filterText, selectedFilter === '' && styles.filterTextActive]}>All</Text>
+                </TouchableOpacity>
+                {COURSE_OPTIONS.map(course => (
+                  <TouchableOpacity
+                    key={course}
+                    style={[styles.filterBtn, selectedFilter === course && styles.filterBtnActive]}
+                    onPress={() => setSelectedFilter(course)}
+                  >
+                    <Text style={[styles.filterText, selectedFilter === course && styles.filterTextActive]}>{course}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+
+          {/* Form Component */}
+          <MenuForm 
+            editingItem={editingItem}
+            onSubmit={handleSaveItem}
+            onCancelEdit={() => setEditingItem(null)}
+          />
+
+          {/* List Component */}
+          <View style={{ paddingBottom: 40 }}>
+            <Text style={styles.listTitle}>
+              {selectedFilter || searchQuery ? 'Filtered Results' : 'All Menu Items'}
             </Text>
             
-            {menuItems.length > 0 ? (
-              <FlatList
-                data={menuItems}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={renderMenuItem}
-                scrollEnabled={false}
-                contentContainerStyle={globalStyles.listContainer}
-              />
+            {filteredItems.length > 0 ? (
+              filteredItems.map((item) => (
+                <MenuItemCard
+                  key={item.id}
+                  item={item}
+                  onEdit={(itemToEdit) => setEditingItem(itemToEdit)}
+                  onDelete={handleDelete}
+                />
+              ))
             ) : (
-              renderEmptyState()
+              <View style={globalStyles.emptyState}>
+                <Icon name="restaurant-outline" size={60} color={colors.gold} />
+                <Text style={globalStyles.emptyStateTitle}>No Items Found</Text>
+                <Text style={globalStyles.emptyStateText}>
+                  {searchQuery || selectedFilter 
+                    ? "No items match your search or filter." 
+                    : "Start adding your delicious dishes above."}
+                </Text>
+              </View>
             )}
           </View>
         </ScrollView>
@@ -298,3 +216,57 @@ export default function MenuScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  statsContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    backgroundColor: colors.primary,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    justifyContent: 'space-between',
+  },
+  statBox: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 20, fontWeight: 'bold', color: colors.gold },
+  statLabel: { fontSize: 12, color: colors.cream, marginTop: 4 },
+  
+  searchSection: {
+    padding: 16,
+    paddingBottom: 0,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 12,
+  },
+  searchInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, fontSize: 16 },
+  
+  filterRow: { flexDirection: 'row', marginBottom: 16 },
+  filterBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: 8,
+  },
+  filterBtnActive: { backgroundColor: colors.gold, borderColor: colors.gold },
+  filterText: { color: colors.darkText, fontSize: 14 },
+  filterTextActive: { color: colors.primary, fontWeight: 'bold' },
+
+  listTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.primary,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    marginTop: 8,
+  },
+});
